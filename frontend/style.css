@@ -1,0 +1,244 @@
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #101114;
+    color: white;
+    font-family: Arial, sans-serif;
+}
+
+.layout {
+    display: flex;
+    height: 100vh;
+}
+
+.sidebar {
+    width: 260px;
+    background: #191a20;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.sidebar h2 {
+    color: #60a5fa;
+}
+
+.sidebar h4 {
+    color: #aaa;
+    margin-top: 30px;
+}
+
+#new-chat {
+    width: 100%;
+    padding: 12px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.chat-item {
+    display: flex;
+    gap: 5px;
+    margin: 8px 0;
+}
+
+.chat-item button {
+    padding: 10px;
+    background: #292b32;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-item .open-chat {
+    flex: 1;
+    text-align: left;
+}
+
+.app {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    min-width: 0;
+}
+
+header {
+    padding: 12px;
+    border-bottom: 1px solid #333;
+}
+
+header h3 {
+    margin: 0;
+}
+
+header span {
+    color: #999;
+    font-size: 12px;
+}
+
+#chat-box {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 5px;
+}
+
+.message {
+    padding: 13px;
+    margin: 12px 0;
+    border-radius: 10px;
+    max-width: 80%;
+    white-space: pre-wrap;
+}
+
+.user {
+    background: #2563eb;
+    margin-left: auto;
+}
+
+.bot {
+    background: #292b32;
+}
+
+#chat-form {
+    display: flex;
+    gap: 10px;
+    padding: 12px 0;
+}
+
+input {
+    flex: 1;
+    min-width: 0;
+    padding: 14px;
+    border-radius: 8px;
+    background: #202127;
+    border: 1px solid #444;
+    color: white;
+}
+
+#chat-form button {
+    padding: 12px 20px;
+    background: #2563eb;
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+}
+
+@media(max-width: 600px) {
+    .sidebar {
+        width: 125px;
+        padding: 10px;
+    }
+
+    .app {
+        padding: 10px;
+    }
+}
+
+.input-container {
+    padding: 12px;
+    border-top: 1px solid #444;
+}
+
+#uploadButton {
+    background: #343434;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 8px;
+}
+
+#uploadButton:hover {
+    background: #505050;
+}
+
+#uploadStatus {
+    font-size: 13px;
+    color: #888;
+    margin-left: 8px;
+}
+
+#chat-form {
+    display: flex;
+    gap: 10px;
+}
+#document-list {
+    margin-top: 10px;
+}
+
+.document-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    background: rgba(128, 128, 128, 0.1);
+    font-size: 12px;
+}
+
+.document-name {
+    overflow-wrap: anywhere;
+    flex: 1;
+}
+
+.delete-document {
+    background: #c0392b;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 6px 8px;
+    cursor: pointer;
+}
+
+.delete-document:hover {
+    background: #e74c3c;
+}
+/* MEMORY MANAGER */
+
+#memory-list {
+    margin-top: 10px;
+}
+
+.memory-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    background: rgba(128, 128, 128, 0.1);
+    font-size: 12px;
+}
+
+.memory-content {
+    flex: 1;
+    overflow-wrap: anywhere;
+}
+
+.memory-category {
+    color: #888;
+    font-size: 10px;
+}
+
+.delete-memory {
+    background: #c0392b;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 6px 8px;
+    cursor: pointer;
+}

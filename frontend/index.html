@@ -1,0 +1,106 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>MyAI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+
+        <h2>MyAI</h2>
+
+        <button id="new-chat">+ New Chat</button>
+
+        <!-- Chat History -->
+        <h4>Chat History</h4>
+
+        <div id="conversation-list"></div>
+
+        <hr>
+        
+
+        <h4>My Memories</h4>
+
+        <div id="memory-list">
+            Loading memories...
+        </div>
+
+        <!-- Document Manager -->
+        <h4>My Documents</h4>
+
+        <div id="document-list">
+            Loading documents...
+        </div>
+
+    </aside>
+
+    <!-- MAIN CHAT AREA -->
+    <main class="app">
+
+        <header>
+            <h3>AI Assistant</h3>
+            <span>Powered by Llama 3.2</span>
+        </header>
+
+        <!-- Chat Messages -->
+        <div id="chat-box">
+
+            <div class="message bot">
+                Hello! I am MyAI. How can I help?
+            </div>
+
+        </div>
+
+        <!-- PDF / DOCX Upload and Chat Input -->
+        <div class="input-container">
+            <div id="conversation-list"></div>
+
+            <div id="document-list"></div>
+            <input
+                type="file"
+                id="pdfInput"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                hidden
+            >
+
+            <button id="uploadButton" type="button">
+                📎 Upload Document
+            </button>
+
+            <span id="uploadStatus"></span>
+
+            <form id="chat-form">
+
+                <input
+                    id="user-input"
+                    type="text"
+                    placeholder="Ask MyAI anything..."
+                    required
+                >
+
+                <button type="submit">
+                    Send
+                </button>
+
+            </form>
+
+        </div>
+
+    </main>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
