@@ -83,24 +83,23 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 3. Launch the Application
+### 3. Turning Server ON / OFF
 
-#### Option A: Local Web Application
-Double-click `run.bat` or run:
-```bash
-python run.py
-```
-This automatically starts the server and opens your browser at **`http://127.0.0.1:8000`**.
+#### 🟢 Turning Server ON
 
-#### Option B: Live Public Tunnel (Access from Phone / Remote)
-Run the tunnel launcher:
-```bash
-python tunnel_launcher.py
-```
-This outputs your active public HTTPS Cloudflare link:
-```
-🎉 LIVE CLOUDFLARE PUBLIC URL: https://consistent-participants-parameters-triple.trycloudflare.com
-```
+- **Option A (Local Only)**: Double-click **`start_local.bat`** (or `run.bat`).
+  Opens the app automatically at **`http://127.0.0.1:8000`**.
+- **Option B (Public Cloudflare Access)**: Double-click **`start_public_tunnel.bat`**.
+  Generates a secure public HTTPS link allowing access from any phone, laptop, or remote network:
+  ```
+  🎉 LIVE CLOUDFLARE PUBLIC URL: https://consistent-participants-parameters-triple.trycloudflare.com
+  ```
+
+#### 🔴 Turning Server OFF
+
+- **Method 1 (One-Click File)**: Double-click **`stop_myai.bat`** on your desktop/folder. It automatically terminates the server and any running Cloudflare tunnels.
+- **Method 2 (In-App Power Button)**: Click the **"Turn Off Server"** red button at the bottom of the sidebar directly inside the web app.
+- **Method 3 (Terminal Shortcut)**: Press `Ctrl + C` in the terminal window where the server is running.
 
 ---
 
@@ -130,7 +129,10 @@ MyAi/
 ├── knowledge/                  # Uploaded knowledge documents (.pdf, .docx, .txt)
 ├── workspace/                  # Sandboxed agent file output directory
 ├── tunnel_launcher.py          # Starts server and public Cloudflare Tunnel
-├── run.bat                     # Windows one-click launcher
+├── start_local.bat             # One-click start for local access
+├── start_public_tunnel.bat     # One-click start with public Cloudflare link
+├── stop_myai.bat               # One-click graceful stop for server & tunnels
+├── run.bat                     # Windows launcher shortcut
 ├── run.py                      # Cross-platform application launcher
 └── README.md
 ```

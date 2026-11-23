@@ -14,6 +14,9 @@ import uuid
 import json
 import sqlite3
 import time
+import os
+import signal
+import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -240,6 +243,17 @@ def health():
         "chromadb": stats,
         "uptime_seconds": round(time.time() - REQUEST_METRICS["start_time"], 1)
     }
+
+
+@app.post("/system/shutdown")
+def shutdown_server():
+    """Gracefully stop the server process from the Web UI."""
+    def delayed_exit():
+        time.sleep(0.8)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=delayed_exit, daemon=True).start()
+    return {"status": "shutting_down", "message": "MyAI server is stopping..."}
 
 
 @app.get("/stats")

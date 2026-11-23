@@ -817,6 +817,24 @@ rejectActionBtn.addEventListener("click", async () => {
     } catch (err) {}
 });
 
+// Server Shutdown
+const shutdownServerBtn = document.getElementById("shutdownServerBtn");
+if (shutdownServerBtn) {
+    shutdownServerBtn.addEventListener("click", async () => {
+        const confirmed = confirm("Are you sure you want to turn off the MyAI server?\n\nTo restart it later, double-click start_local.bat or start_public_tunnel.bat.");
+        if (!confirmed) return;
+
+        try {
+            shutdownServerBtn.disabled = true;
+            shutdownServerBtn.innerHTML = `<span>Stopping...</span>`;
+            await fetch(`${API}/system/shutdown`, { method: "POST" });
+            alert("MyAI server is turning off. You can close this browser tab.");
+        } catch (e) {
+            alert("Server stopped or connection closed.");
+        }
+    });
+}
+
 // Mobile Sidebar Toggle
 sidebarToggle.addEventListener("click", () => {
     sidebar.classList.toggle("open");
