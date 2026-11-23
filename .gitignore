@@ -1,27 +1,35 @@
-
 # Python environment
 .venv/
+env/
+venv/
 __pycache__/
 *.py[cod]
+*$py.class
 
-# Private configuration
+# Private and local configuration
 .env
 .env.*
 
-# Database and personal conversations
+# Local databases and vector store
 data/
 *.db
 *.sqlite
 *.sqlite3
 
-# Uploaded private documents
+# Uploaded documents
 knowledge/*
 !knowledge/.gitkeep
+!knowledge/ai.txt
+!knowledge/python.txt
+!knowledge/programming.txt
+!knowledge/renewable-energy-notes.docx
+!knowledge/sample.pdf
 
-# Local model files
-models/
+# Workspace isolation
+workspace/*
+!workspace/.gitkeep
 
-# IDE and system files
+# IDE and OS files
 .vscode/
 .idea/
 .DS_Store

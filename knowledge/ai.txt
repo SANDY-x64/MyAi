@@ -1,0 +1,9 @@
+Artificial intelligence enables computers
+to perform tasks that normally require
+human intelligence.
+
+Machine learning allows computers to
+learn patterns from data.
+
+Deep learning uses neural networks
+with multiple layers.

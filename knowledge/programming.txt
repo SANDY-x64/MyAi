@@ -1,0 +1,9 @@
+Programming is the process of writing
+instructions for computers.
+
+HTML defines webpage structure.
+CSS controls webpage appearance.
+JavaScript adds interactivity.
+
+Python and Java are general-purpose
+programming languages.

@@ -101,9 +101,14 @@ def save_conversation_summary(
 
 def generate_conversation_summary(
     messages,
-    ollama_url,
-    model
+    ollama_url=None,
+    model=None
 ):
+    from backend.model_manager import resolve_model, OLLAMA_BASE_URL
+    if not ollama_url:
+        ollama_url = f"{OLLAMA_BASE_URL}/api/chat"
+    if not model:
+        model = resolve_model(None)
 
     conversation_text = ""
 

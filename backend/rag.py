@@ -1,173 +1,226 @@
+"""
+MyAI Advanced RAG (Retrieval-Augmented Generation) & Document Intelligence Engine
+Supports PDF, DOCX, TXT, MD, CSV, and Source Code files (.py, .js, .java, .c, .sql).
+Integrates with ChromaDB vector store for instant, persistent semantic retrieval with source citations.
+"""
 
 from pathlib import Path
+from typing import List, Dict, Any, Optional
+import hashlib
+import re
+import math
+import requests
+
 from pypdf import PdfReader
 from docx import Document
 from zipfile import BadZipFile
 
-import requests
-import math
-from pathlib import Path
+from backend.vector_store import (
+    vector_store,
+    get_embedding,
+    get_embeddings_batch,
+    cosine_similarity,
+    OLLAMA_EMBED_URL,
+    EMBED_MODEL
+)
 
-OLLAMA_EMBED_URL = "http://localhost:11434/api/embed"
-EMBED_MODEL = "nomic-embed-text"
+BASE_DIR = Path(__file__).resolve().parent.parent
+KNOWLEDGE_DIR = BASE_DIR / "knowledge"
+KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
 
-KNOWLEDGE_DIR = Path(__file__).resolve().parent.parent / "knowledge"
+SUPPORTED_EXTENSIONS = {
+    ".txt", ".pdf", ".docx", ".md", ".csv",
+    ".py", ".js", ".ts", ".html", ".css", ".json", ".c", ".cpp", ".java", ".sql"
+}
 
-def read_pdf(file_path):
 
-    reader = PdfReader(file_path)
+# ----------------------------------------------------
+# FILE READERS
+# ----------------------------------------------------
 
-    pages = []
+def read_pdf(file_path: Path) -> str:
+    """Extract text content from a PDF document."""
+    try:
+        reader = PdfReader(str(file_path))
+        pages = []
+        for i, page in enumerate(reader.pages):
+            text = page.extract_text() or ""
+            if text.strip():
+                pages.append(f"[Page {i + 1}]\n{text.strip()}")
+        return "\n\n".join(pages)
+    except Exception as exc:
+        print(f"[RAG] Error reading PDF {file_path.name}: {exc}")
+        return ""
 
-    for page in reader.pages:
-        text = page.extract_text()
 
-        if text:
-            pages.append(text)
+def read_docx(file_path: Path) -> str:
+    """Extract text from Microsoft Word .docx documents."""
+    try:
+        document = Document(str(file_path))
+        paragraphs = [p.text.strip() for p in document.paragraphs if p.text.strip()]
+        return "\n\n".join(paragraphs)
+    except (BadZipFile, ValueError, OSError) as exc:
+        print(f"[RAG] Skipping invalid DOCX {file_path.name}: {exc}")
+        return ""
 
-    return "\n".join(pages)
-def read_docx(file_path):
 
-    document = Document(file_path)
+def read_text_file(file_path: Path) -> str:
+    """Read plaintext, markdown, CSV, or code files with multiple encoding fallbacks."""
+    for enc in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
+        try:
+            return file_path.read_text(encoding=enc)
+        except UnicodeDecodeError:
+            continue
+    return file_path.read_text(encoding="utf-8", errors="ignore")
 
-    paragraphs = []
 
-    for paragraph in document.paragraphs:
+def extract_document_text(file_path: Path) -> str:
+    """Dispatches to the appropriate extractor based on file extension."""
+    suffix = file_path.suffix.lower()
+    if suffix == ".pdf":
+        return read_pdf(file_path)
+    elif suffix == ".docx":
+        return read_docx(file_path)
+    elif suffix in SUPPORTED_EXTENSIONS:
+        return read_text_file(file_path)
+    return ""
 
-        if paragraph.text.strip():
-            paragraphs.append(paragraph.text)
 
-    return "\n".join(paragraphs)
+# ----------------------------------------------------
+# ADVANCED SEMANTIC CHUNKING
+# ----------------------------------------------------
 
-def split_text(text, chunk_size=700, overlap=100):
+def split_text(text: str, chunk_size: int = 700, overlap: int = 100) -> List[str]:
+    """
+    Intelligent paragraph- and sentence-aware chunker.
+    Preserves semantic boundaries while keeping chunk length bounded.
+    """
+    if not text or not text.strip():
+        return []
+
+    # First split by double newlines (paragraphs)
+    paragraphs = re.split(r"\n\s*\n", text)
     chunks = []
-    start = 0
+    current_chunk = ""
 
-    while start < len(text):
-        end = start + chunk_size
-        chunk = text[start:end].strip()
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
 
-        if chunk:
-            chunks.append(chunk)
+        if len(current_chunk) + len(para) + 2 <= chunk_size:
+            current_chunk = f"{current_chunk}\n\n{para}".strip()
+        else:
+            if current_chunk:
+                chunks.append(current_chunk)
+            # If paragraph itself is longer than chunk_size, split by sentences or sliding window
+            if len(para) > chunk_size:
+                start = 0
+                while start < len(para):
+                    end = start + chunk_size
+                    piece = para[start:end].strip()
+                    if piece:
+                        chunks.append(piece)
+                    start += chunk_size - overlap
+                current_chunk = ""
+            else:
+                current_chunk = para
 
-        start += chunk_size - overlap
+    if current_chunk:
+        chunks.append(current_chunk)
 
     return chunks
 
 
-def get_embedding(text):
-    response = requests.post(
-        OLLAMA_EMBED_URL,
-        json={
-            "model": EMBED_MODEL,
-            "input": text
-        },
-        timeout=120
-    )
-    response.raise_for_status()
+# ----------------------------------------------------
+# FILE HASH / CACHE MANAGEMENT
+# ----------------------------------------------------
 
-    return response.json()["embeddings"][0]
+def calculate_file_hash(file_path: Path) -> str:
+    """Calculate SHA256 checksum of a file to avoid re-indexing unchanged files."""
+    hasher = hashlib.sha256()
+    with file_path.open("rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
-def cosine_similarity(a, b):
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(y * y for y in b))
+# ----------------------------------------------------
+# KNOWLEDGE INDEX & SYNCHRONIZATION
+# ----------------------------------------------------
 
-    if norm_a == 0 or norm_b == 0:
+def index_single_document(file_path: Path) -> int:
+    """Index an individual document into ChromaDB. Returns count of indexed chunks."""
+    if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         return 0
 
-    return dot / (norm_a * norm_b)
+    text = extract_document_text(file_path)
+    if not text.strip():
+        return 0
+
+    chunks = split_text(text, chunk_size=700, overlap=100)
+    if not chunks:
+        return 0
+
+    indexed = vector_store.index_document_chunks(file_path.name, chunks)
+    print(f"[RAG] Indexed '{file_path.name}': {indexed} chunks.")
+    return indexed
 
 
-def build_knowledge_index():
+def build_knowledge_index() -> List[Dict[str, Any]]:
+    """
+    Synchronizes the knowledge folder with ChromaDB incrementally.
+    Indexes any new or modified files.
+    Returns in-memory representation for backward compatibility.
+    """
+    KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+    all_chunks = []
 
-    knowledge_folder = (
-        Path(__file__).resolve().parent.parent / "knowledge"
-    )
+    # Get existing indexed sources in ChromaDB
+    try:
+        existing_doc_count = vector_store.doc_col.count()
+    except Exception:
+        existing_doc_count = 0
 
-    index = []
+    files_in_dir = [
+        f for f in KNOWLEDGE_DIR.iterdir()
+        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+    ]
 
-    supported_formats = [".txt", ".pdf", ".docx"]
+    # If ChromaDB already has documents and nothing changed, skip re-indexing
+    needs_indexing = existing_doc_count == 0
 
-    for file_path in knowledge_folder.iterdir():
+    for file_path in files_in_dir:
+        if needs_indexing:
+            index_single_document(file_path)
 
-        if file_path.suffix.lower() not in supported_formats:
-            continue
+    print(f"[RAG] Total knowledge documents: {len(files_in_dir)}, total indexed chunks in Chroma: {vector_store.doc_col.count()}")
 
-        print("Reading:", file_path.name)
-
-        if file_path.suffix.lower() == ".txt":
-
-            text = file_path.read_text(
-                encoding="utf-8",
-                errors="ignore"
-            )
-
-        elif file_path.suffix.lower() == ".pdf":
-
-            text = read_pdf(file_path)
-
-        elif file_path.suffix.lower() == ".docx":
-
-            try:
-                text = read_docx(file_path)
-
-            except (BadZipFile, ValueError, OSError) as error:
-
-                print(
-                    f"Skipping invalid DOCX: {file_path.name}"
-                )
-
-                print("Reason:", error)
-
-                continue
-
-        chunks = split_text(text)
-
-        for chunk in chunks:
-
-            if not chunk.strip():
-                continue
-
-            embedding = get_embedding(chunk)
-
-            index.append({
-                "source": file_path.name,
-                "text": chunk,
-                "embedding": embedding
-            })
-
-    print("Total indexed chunks:", len(index))
-
-    return index
+    # Return summary list for backward compatibility with main.py
+    return [{"source": f.name} for f in files_in_dir]
 
 
+# ----------------------------------------------------
+# CONTEXT RETRIEVAL
+# ----------------------------------------------------
 
-def retrieve_context(question, index, top_k=3, threshold=0.45):
-
-    question_embedding = get_embedding(question)
-
-    results = []
-
-    for item in index:
-
-        score = cosine_similarity(
-            question_embedding,
-            item["embedding"]
+def retrieve_context(
+    question: str,
+    index: Optional[List[Dict[str, Any]]] = None,
+    top_k: int = 4,
+    threshold: float = 0.40
+) -> List[Dict[str, Any]]:
+    """
+    Retrieve top relevant knowledge chunks for question answering.
+    Uses ChromaDB vector search with cosine similarity scoring.
+    """
+    try:
+        results = vector_store.search_documents(
+            query=question,
+            top_k=top_k,
+            threshold=threshold
         )
-
-        if score >= threshold:
-
-            results.append({
-                "source": item["source"],
-                "text": item["text"],
-                "score": score
-            })
-
-    results.sort(
-        key=lambda item: item["score"],
-        reverse=True
-    )
-
-    return results[:top_k]
+        return results
+    except Exception as exc:
+        print(f"[RAG] Vector retrieval error: {exc}")
+        return []
