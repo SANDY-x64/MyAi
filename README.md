@@ -1,12 +1,12 @@
 # ✨ MyAI - Advanced Personal AI Assistant & Platform
 
-[![Direct Access](https://img.shields.io/badge/Direct%20Live%20App-Cloudflare%20Tunnel-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://consistent-participants-parameters-triple.trycloudflare.com/)
+[![Direct Access](https://img.shields.io/badge/Direct%20Live%20App-Cloudflare%20Tunnel-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://falls-mobility-wing-notify.trycloudflare.com/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Ollama](https://img.shields.io/badge/Inference-Ollama%20Local-black?style=for-the-badge&logo=ollama&logoColor=white)](https://ollama.ai/)
 [![ChromaDB](https://img.shields.io/badge/Vector%20DB-ChromaDB%201.5-purple?style=for-the-badge)](https://www.trychroma.com/)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 
-> 🌐 **Direct Live Access Link:** [https://consistent-participants-parameters-triple.trycloudflare.com/](https://consistent-participants-parameters-triple.trycloudflare.com/)  
+> 🌐 **Direct Live Access Link:** [https://falls-mobility-wing-notify.trycloudflare.com/](https://falls-mobility-wing-notify.trycloudflare.com/)  
 > *(Click above to access your live MyAI assistant from any browser, phone, or tablet!)*
 
 **MyAI** is an advanced, privacy-first personal AI platform similar to ChatGPT, powered entirely on your local machine using **Ollama**, **FastAPI**, **ChromaDB**, and **SQLite**. It features persistent hybrid long-term memory, multi-format RAG document intelligence, autonomous tool-calling agents with human approval, multimodal speech and vision, live web search with citations, and a sleek, responsive ChatGPT-style web interface.
