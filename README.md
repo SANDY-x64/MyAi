@@ -92,7 +92,7 @@ pip install -r requirements.txt
 - **Option B (Public Cloudflare Access)**: Double-click **`start_public_tunnel.bat`**.
   Generates a secure public HTTPS link allowing access from any phone, laptop, or remote network:
   ```
-  🎉 LIVE CLOUDFLARE PUBLIC URL: https://consistent-participants-parameters-triple.trycloudflare.com
+  🎉 LIVE CLOUDFLARE PUBLIC URL: https://falls-mobility-wing-notify.trycloudflare.com
   ```
 
 #### 🔴 Turning Server OFF

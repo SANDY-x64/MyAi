@@ -27,7 +27,7 @@ def run_tunnel():
     print("[2] Starting Cloudflare Tunnel...")
     cf_cmd = [
         str(CLOUDFLARED_PATH),
-        "tunnel", "--url", "http://127.0.0.1:8000"
+        "tunnel", "--protocol", "http2", "--url", "http://127.0.0.1:8000"
     ]
     cf_proc = subprocess.Popen(
         cf_cmd,

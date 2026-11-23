@@ -37,13 +37,18 @@
     padding: 0;
 }
 
-body {
+html, body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-family: var(--font-sans);
-    height: 100vh;
+    height: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 0;
     overflow: hidden;
     line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
 }
 
 /* -------------------------------------------------------------------
@@ -51,9 +56,11 @@ body {
    ------------------------------------------------------------------- */
 .app-layout {
     display: flex;
-    height: 100vh;
+    height: 100%;
+    height: 100dvh;
     width: 100vw;
     overflow: hidden;
+    position: relative;
 }
 
 /* -------------------------------------------------------------------
@@ -66,8 +73,36 @@ body {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    transition: transform 0.25s ease;
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 50;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.sidebar.collapsed {
+    width: 0 !important;
+    border-right: none;
+    transform: translateX(-100%);
+    pointer-events: none;
+}
+
+/* Backdrop for Mobile Drawer */
+.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.sidebar-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .sidebar-header {
@@ -75,6 +110,30 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+.sidebar-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.sidebar-close-btn {
+    display: none;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 6px;
+    cursor: pointer;
+    background: transparent;
+    transition: var(--transition-fast);
+}
+
+.sidebar-close-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
+    border-color: var(--border-focus);
 }
 
 .brand {
@@ -390,31 +449,46 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    height: 100%;
+    height: 100dvh;
     min-width: 0;
     background-color: var(--bg-primary);
     position: relative;
+    overflow: hidden;
 }
 
 /* Top Navbar */
 .chat-header {
     height: 60px;
-    padding: 0 20px;
+    padding: 0 16px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
-    background-color: rgba(15, 16, 21, 0.85);
-    backdrop-filter: blur(10px);
+    background-color: rgba(15, 16, 21, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     z-index: 20;
+    gap: 10px;
 }
 
 .header-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
     overflow: hidden;
+}
+
+.chat-title-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    justify-content: center;
 }
 
 .chat-title-group h3 {
@@ -423,13 +497,18 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.3;
+    margin: 0;
+    color: var(--text-primary);
 }
 
 .chat-badges {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-top: 2px;
+    margin-top: 3px;
+    overflow: hidden;
+    flex-wrap: nowrap;
 }
 
 .badge {
@@ -440,6 +519,8 @@ body {
     background-color: var(--bg-tertiary);
     color: var(--text-secondary);
     border: 1px solid var(--border-color);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .badge-info {
@@ -450,7 +531,8 @@ body {
 
 .header-actions {
     display: flex;
-    gap: 8px;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .icon-btn {
@@ -476,10 +558,20 @@ body {
 .messages-viewport {
     flex: 1;
     overflow-y: auto;
-    padding: 24px 20px;
+    overflow-x: hidden;
+    padding: 20px 20px 28px 20px;
     display: flex;
     flex-direction: column;
     gap: 20px;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+}
+
+.messages-viewport::before {
+    content: "";
+    display: block;
+    height: 4px;
+    flex-shrink: 0;
 }
 
 /* Welcome Hero */
@@ -1010,7 +1102,7 @@ textarea#userInput::placeholder {
 }
 
 /* -------------------------------------------------------------------
-   RESPONSIVE DESIGN (MOBILE & TABLET)
+   RESPONSIVE DESIGN (MOBILE, TABLET & DESKTOP)
    ------------------------------------------------------------------- */
 @media (max-width: 768px) {
     .sidebar {
@@ -1018,11 +1110,161 @@ textarea#userInput::placeholder {
         left: 0;
         top: 0;
         bottom: 0;
+        width: min(85vw, 320px) !important;
+        height: 100dvh;
         transform: translateX(-100%);
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 1000;
+        box-shadow: none;
     }
 
     .sidebar.open {
-        transform: translateX(0);
-        box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+        transform: translateX(0) !important;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.7);
+    }
+
+    .sidebar.collapsed {
+        transform: translateX(-100%) !important;
+    }
+
+    .sidebar-close-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .chat-header {
+        height: 56px;
+        padding: 0 12px;
+        gap: 8px;
+    }
+
+    .chat-title-group h3 {
+        font-size: 14px;
+        max-width: 100%;
+    }
+
+    .chat-badges {
+        margin-top: 1px;
+    }
+
+    .badge {
+        font-size: 9.5px;
+        padding: 1.5px 5px;
+    }
+
+    /* On mobile header, hide secondary persona badge to give conversation title maximum space */
+    #activePersonaBadge {
+        display: none;
+    }
+
+    .messages-viewport {
+        padding: 14px 12px 20px 12px;
+        gap: 14px;
+    }
+
+    .message-row {
+        gap: 10px;
+    }
+
+    .avatar {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+
+    .message-bubble {
+        padding: 10px 14px;
+        font-size: 13.5px;
+        max-width: 88%;
+    }
+
+    .message-row.user .message-bubble {
+        max-width: 88%;
+    }
+
+    /* On touch devices, keep delete action button visible */
+    .item-actions {
+        opacity: 0.75;
+    }
+
+    .chat-item:active .item-actions {
+        opacity: 1;
+    }
+
+    .modal-card {
+        width: 92%;
+        max-width: 500px;
+        margin: 16px;
+    }
+}
+
+@media (max-width: 520px) {
+    .chat-header {
+        height: 52px;
+        padding: 0 8px;
+        gap: 6px;
+    }
+
+    .chat-title-group h3 {
+        font-size: 13.5px;
+    }
+
+    .input-dock {
+        padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)) 8px;
+    }
+
+    .chat-form {
+        padding: 5px 8px;
+        gap: 5px;
+        border-radius: 20px;
+    }
+
+    .tool-btn, .mic-btn, .send-btn {
+        width: 32px;
+        height: 32px;
+    }
+
+    .tool-btn svg, .mic-btn svg, .send-btn svg {
+        width: 17px;
+        height: 17px;
+    }
+
+    #userInput {
+        font-size: 13.5px;
+        padding: 5px 0;
+    }
+
+    .dock-caption {
+        font-size: 9.5px;
+        margin-top: 3px;
+        text-align: center;
+    }
+
+    .welcome-hero {
+        padding: 24px 12px;
+    }
+
+    .welcome-hero h1 {
+        font-size: 22px;
+    }
+
+    .welcome-hero p {
+        font-size: 12.5px;
+        margin-bottom: 20px;
+    }
+
+    .suggestion-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .message-bubble {
+        padding: 9px 12px;
+        font-size: 13px;
+        max-width: 90%;
+    }
+
+    .message-row.user .message-bubble {
+        max-width: 90%;
     }
 }

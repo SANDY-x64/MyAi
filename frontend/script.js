@@ -151,7 +151,7 @@ window.copyCodeFromBlock = function(btn) {
 // -------------------------------------------------------------------
 // 4. CHAT MESSAGE RENDERING
 // -------------------------------------------------------------------
-function createMessageRow(role, content = "", imageData = null) {
+function createMessageRow(role, content = "", imageData = null, autoScroll = true) {
     if (welcomeHero && welcomeHero.parentNode) {
         welcomeHero.remove();
     }
@@ -221,7 +221,9 @@ function createMessageRow(role, content = "", imageData = null) {
     }
 
     chatBox.appendChild(row);
-    scrollChatToBottom();
+    if (autoScroll) {
+        scrollChatToBottom();
+    }
     return contentDiv;
 }
 
@@ -343,10 +345,16 @@ chatForm.addEventListener("submit", async (e) => {
     clearAttachment();
 
     // 1. Render User Message
-    createMessageRow("user", message, imageData);
+    createMessageRow("user", message, imageData, true);
+
+    // Dynamically update conversation title if new chat
+    if (!state.conversationId || chatTitle.textContent === "New Conversation" || chatTitle.textContent === "Conversation") {
+        const titleSnippet = message ? (message.length > 36 ? message.slice(0, 36) + "..." : message) : "Image Analysis";
+        chatTitle.textContent = titleSnippet;
+    }
 
     // 2. Render AI Message Bubble Placeholder
-    const botContentEl = createMessageRow("bot", "");
+    const botContentEl = createMessageRow("bot", "", null, true);
     botContentEl.innerHTML = `<span style="color: #64748b;">Thinking...</span>`;
 
     let accumulatedText = "";
@@ -595,14 +603,32 @@ async function openConversation(id, title) {
 
         state.conversationId = id;
         localStorage.setItem("myai_conversation_id", id);
-        chatTitle.textContent = title || "Conversation";
+
+        // Derive conversation title if missing or default
+        if (data.title && data.title !== "New Conversation" && data.title !== "Conversation") {
+            chatTitle.textContent = data.title;
+        } else if (title && title !== "New Conversation" && title !== "Conversation") {
+            chatTitle.textContent = title;
+        } else {
+            const firstUserMsg = (data.messages || []).find(m => m.role === "user");
+            if (firstUserMsg && firstUserMsg.content) {
+                const trimmed = firstUserMsg.content.replace(/\s+/g, " ").trim();
+                chatTitle.textContent = trimmed.length > 36 ? trimmed.slice(0, 36) + "..." : trimmed;
+            } else {
+                chatTitle.textContent = "New Conversation";
+            }
+        }
 
         chatBox.innerHTML = "";
         (data.messages || []).forEach(m => {
-            createMessageRow(m.role === "user" ? "user" : "bot", m.content, m.image_data);
+            createMessageRow(m.role === "user" ? "user" : "bot", m.content, m.image_data, false);
         });
 
+        // Ensure user can see the top first line and context of conversation
+        chatBox.scrollTop = 0;
+
         loadConversations();
+        closeSidebarIfMobile();
     } catch (err) {
         alert("Could not load conversation history.");
     }
@@ -631,6 +657,7 @@ function startNewChat() {
     clearAttachment();
     loadConversations();
     userInput.focus();
+    closeSidebarIfMobile();
 }
 
 newChatBtn.addEventListener("click", startNewChat);
@@ -835,9 +862,75 @@ if (shutdownServerBtn) {
     });
 }
 
-// Mobile Sidebar Toggle
-sidebarToggle.addEventListener("click", () => {
-    sidebar.classList.toggle("open");
+// -------------------------------------------------------------------
+// 9. SIDEBAR TOGGLE & RESPONSIVE BEHAVIOR
+// -------------------------------------------------------------------
+const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+const sidebarCloseBtn = document.getElementById("sidebarCloseBtn");
+
+function isMobileView() {
+    return window.innerWidth <= 768;
+}
+
+function openMobileSidebar() {
+    sidebar.classList.add("open");
+    if (sidebarBackdrop) sidebarBackdrop.classList.add("active");
+}
+
+function closeMobileSidebar() {
+    sidebar.classList.remove("open");
+    if (sidebarBackdrop) sidebarBackdrop.classList.remove("active");
+}
+
+function closeSidebarIfMobile() {
+    if (isMobileView()) {
+        closeMobileSidebar();
+    }
+}
+
+function toggleSidebar() {
+    if (isMobileView()) {
+        if (sidebar.classList.contains("open")) {
+            closeMobileSidebar();
+        } else {
+            openMobileSidebar();
+        }
+    } else {
+        // Desktop collapse / expand
+        sidebar.classList.toggle("collapsed");
+    }
+}
+
+sidebarToggle.addEventListener("click", toggleSidebar);
+
+if (sidebarCloseBtn) {
+    sidebarCloseBtn.addEventListener("click", closeMobileSidebar);
+}
+
+if (sidebarBackdrop) {
+    sidebarBackdrop.addEventListener("click", closeMobileSidebar);
+}
+
+// Global Keyboard shortcuts:
+// - Escape: close mobile sidebar & modals
+// - Ctrl+B / Cmd+B: toggle sidebar collapse on desktop & drawer on mobile
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+        closeMobileSidebar();
+        if (actionModal) actionModal.style.display = "none";
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleSidebar();
+    }
+});
+
+// Auto-cleanup on window resize
+window.addEventListener("resize", () => {
+    if (!isMobileView()) {
+        sidebar.classList.remove("open");
+        if (sidebarBackdrop) sidebarBackdrop.classList.remove("active");
+    }
 });
 
 // -------------------------------------------------------------------

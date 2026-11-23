@@ -693,8 +693,13 @@ def get_conversations():
 
 @app.get("/history/{conversation_id}")
 def get_history(conversation_id: str):
-    """Retrieve full message history for a conversation."""
+    """Retrieve full message history and metadata for a conversation."""
     with get_connection() as conn:
+        meta = conn.execute(
+            "SELECT title, persona FROM conversation_metadata WHERE conversation_id = ?",
+            (conversation_id,)
+        ).fetchone()
+
         rows = conn.execute(
             """
             SELECT role, content, model, image_data, created_at
@@ -707,6 +712,8 @@ def get_history(conversation_id: str):
 
     return {
         "conversation_id": conversation_id,
+        "title": meta["title"] if meta and meta["title"] else None,
+        "persona": meta["persona"] if meta and meta["persona"] else "default",
         "messages": [
             {
                 "role": r["role"],
