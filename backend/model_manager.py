@@ -7,7 +7,7 @@ Optimized for the local hardware profile (16 GB RAM, AMD Ryzen 7).
 import requests
 from typing import Optional
 
-OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_CHAT_MODEL = "llama3.2:1b"
 DEFAULT_EMBED_MODEL = "nomic-embed-text"
 
@@ -68,7 +68,7 @@ RECOMMENDED_MODELS = [
 def check_ollama_status() -> dict:
     """Check if Ollama daemon is reachable and responding."""
     try:
-        res = requests.get(f"{OLLAMA_BASE_URL}/api/version", timeout=3)
+        res = requests.get(f"{OLLAMA_BASE_URL}/api/version", timeout=(0.8, 1.5))
         if res.status_code == 200:
             version = res.json().get("version", "unknown")
             return {"online": True, "version": version}
@@ -80,7 +80,7 @@ def check_ollama_status() -> dict:
 def get_installed_models() -> list[dict]:
     """Fetch all locally pulled Ollama models."""
     try:
-        res = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5)
+        res = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=(0.8, 2.0))
         res.raise_for_status()
         models = res.json().get("models", [])
         formatted = []

@@ -20,7 +20,7 @@ import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -82,10 +82,17 @@ from backend.agent import (
     TOOLS
 )
 from backend.auth import (
+    init_auth_tables,
     register_user,
     authenticate_user,
     validate_session,
     invalidate_session
+)
+from backend.excel_manager import (
+    sync_candidates_to_excel,
+    get_all_candidates_data,
+    EXCEL_PATH,
+    CSV_PATH
 )
 
 # ----------------------------------------------------
@@ -120,6 +127,7 @@ def initialize_database():
                 content TEXT NOT NULL,
                 model TEXT DEFAULT 'llama3.2:1b',
                 image_data TEXT,
+                user_id INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -131,6 +139,8 @@ def initialize_database():
             cursor.execute("ALTER TABLE messages ADD COLUMN model TEXT DEFAULT 'llama3.2:1b'")
         if "image_data" not in cols:
             cursor.execute("ALTER TABLE messages ADD COLUMN image_data TEXT")
+        if "user_id" not in cols:
+            cursor.execute("ALTER TABLE messages ADD COLUMN user_id INTEGER DEFAULT 1")
 
         # Conversation metadata table for titles
         cursor.execute("""
@@ -138,11 +148,17 @@ def initialize_database():
                 conversation_id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
                 persona TEXT DEFAULT 'default',
+                user_id INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("PRAGMA table_info(conversation_metadata)")
+        meta_cols = [c[1] for c in cursor.fetchall()]
+        if "user_id" not in meta_cols:
+            cursor.execute("ALTER TABLE conversation_metadata ADD COLUMN user_id INTEGER DEFAULT 1")
 
+    init_auth_tables()
     init_memory_table()
     init_conversation_memory_table()
 
@@ -204,6 +220,48 @@ class ActionExecutionRequest(BaseModel):
 class AuthRequest(BaseModel):
     username: str
     password: str
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    role: Optional[str] = "Candidate"
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class MemoryRequest(BaseModel):
+    content: str
+    category: Optional[str] = "general"
+
+
+def get_current_user(request: Request) -> Dict[str, Any]:
+    """Extract authenticated candidate or fall back to default user."""
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        token = request.cookies.get("myai_token")
+
+    user = validate_session(token)
+    if user:
+        return user
+
+    return {
+        "user_id": 1,
+        "username": "default",
+        "full_name": "Default Candidate",
+        "email": "user@myai.local",
+        "phone": "N/A",
+        "role": "Candidate"
+    }
 
 
 # ----------------------------------------------------
@@ -308,11 +366,13 @@ def build_chat_context(
     message: str,
     conversation_id: str,
     persona_key: str = "default",
-    web_search_enabled: bool = False
+    web_search_enabled: bool = False,
+    user_id: int = 1
 ) -> Dict[str, Any]:
     """
     Assembles long-term memories, conversation summaries, RAG context,
-    web search citations, and system reasoning guidance into a unified prompt.
+    web search citations, and system reasoning guidance into a unified prompt,
+    isolated per candidate user_id.
     """
     # 1. Fetch conversation history
     with get_connection() as conn:
@@ -359,8 +419,8 @@ def build_chat_context(
     history = trim_history_by_tokens(history, max_tokens=3000)
     history_clean = [{"role": m["role"], "content": m["content"]} for m in history]
 
-    # 3. Retrieve Long-Term Memories
-    memories = retrieve_relevant_memories(message, top_k=5, threshold=0.38)
+    # 3. Retrieve Long-Term Memories (Candidate Isolated)
+    memories = retrieve_relevant_memories(message, user_id=user_id, top_k=5, threshold=0.38)
     if memories:
         memory_context = "\n".join([f"- [{m['category']}] {m['content']}" for m in memories])
     else:
@@ -430,10 +490,13 @@ REASONING DIRECTIVES:
 
 
 @app.post("/chat")
-def chat(request: ChatRequest, background_tasks: BackgroundTasks):
+def chat(request: ChatRequest, raw_request: Request, background_tasks: BackgroundTasks):
     """Standard non-streaming chat endpoint with full RAG and memory synthesis."""
     REQUEST_METRICS["total_requests"] += 1
     t0 = time.time()
+
+    user = get_current_user(raw_request)
+    uid = user["user_id"]
 
     conversation_id = request.conversation_id or str(uuid.uuid4())
     if not request.message.strip() and not request.image_data:
@@ -445,23 +508,23 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO messages (conversation_id, role, content, model, image_data)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO messages (conversation_id, role, content, model, image_data, user_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (conversation_id, "user", request.message, selected_model, request.image_data)
+            (conversation_id, "user", request.message, selected_model, request.image_data, uid)
         )
         # Record metadata title if first message
         conn.execute(
             """
-            INSERT OR IGNORE INTO conversation_metadata (conversation_id, title, persona)
-            VALUES (?, ?, ?)
+            INSERT OR IGNORE INTO conversation_metadata (conversation_id, title, persona, user_id)
+            VALUES (?, ?, ?, ?)
             """,
-            (conversation_id, request.message[:40] if request.message else "Image Query", request.persona or "default")
+            (conversation_id, request.message[:40] if request.message else "Image Query", request.persona or "default", uid)
         )
 
-    # 2. Extract memories asynchronously in background
+    # 2. Extract memories asynchronously in background (isolated to candidate user)
     if request.message.strip():
-        background_tasks.add_task(extract_and_save_memories, request.message)
+        background_tasks.add_task(extract_and_save_memories, request.message, uid)
 
     # 3. Handle Multimodal Vision query if image is attached
     if request.image_data:
@@ -477,8 +540,8 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 
         with get_connection() as conn:
             conn.execute(
-                "INSERT INTO messages (conversation_id, role, content, model) VALUES (?, ?, ?, ?)",
-                (conversation_id, "assistant", reply, selected_model)
+                "INSERT INTO messages (conversation_id, role, content, model, user_id) VALUES (?, ?, ?, ?, ?)",
+                (conversation_id, "assistant", reply, selected_model, uid)
             )
         return {
             "conversation_id": conversation_id,
@@ -491,7 +554,8 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         message=request.message,
         conversation_id=conversation_id,
         persona_key=request.persona or "default",
-        web_search_enabled=request.web_search_enabled or False
+        web_search_enabled=request.web_search_enabled or False,
+        user_id=uid
     )
 
     # 5. Send to Ollama
@@ -520,8 +584,8 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     # 6. Store AI response
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO messages (conversation_id, role, content, model) VALUES (?, ?, ?, ?)",
-            (conversation_id, "assistant", reply, selected_model)
+            "INSERT INTO messages (conversation_id, role, content, model, user_id) VALUES (?, ?, ?, ?, ?)",
+            (conversation_id, "assistant", reply, selected_model, uid)
         )
 
     REQUEST_METRICS["last_response_time_ms"] = round((time.time() - t0) * 1000, 1)
@@ -536,9 +600,12 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 
 
 @app.post("/chat/stream")
-def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks):
+def chat_stream(request: ChatRequest, raw_request: Request, background_tasks: BackgroundTasks):
     """High-performance streaming chat endpoint with live token yield and DB saving."""
     REQUEST_METRICS["total_requests"] += 1
+
+    user = get_current_user(raw_request)
+    uid = user["user_id"]
 
     conversation_id = request.conversation_id or str(uuid.uuid4())
     if not request.message.strip() and not request.image_data:
@@ -550,22 +617,22 @@ def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks):
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO messages (conversation_id, role, content, model, image_data)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO messages (conversation_id, role, content, model, image_data, user_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (conversation_id, "user", request.message, selected_model, request.image_data)
+            (conversation_id, "user", request.message, selected_model, request.image_data, uid)
         )
         conn.execute(
             """
-            INSERT OR IGNORE INTO conversation_metadata (conversation_id, title, persona)
-            VALUES (?, ?, ?)
+            INSERT OR IGNORE INTO conversation_metadata (conversation_id, title, persona, user_id)
+            VALUES (?, ?, ?, ?)
             """,
-            (conversation_id, request.message[:40] if request.message else "Image Query", request.persona or "default")
+            (conversation_id, request.message[:40] if request.message else "Image Query", request.persona or "default", uid)
         )
 
-    # 2. Extract memories asynchronously in background
+    # 2. Extract memories asynchronously in background (isolated to candidate user)
     if request.message.strip():
-        background_tasks.add_task(extract_and_save_memories, request.message)
+        background_tasks.add_task(extract_and_save_memories, request.message, uid)
 
     # 3. Vision check
     if request.image_data:
@@ -578,8 +645,8 @@ def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks):
 
         with get_connection() as conn:
             conn.execute(
-                "INSERT INTO messages (conversation_id, role, content, model) VALUES (?, ?, ?, ?)",
-                (conversation_id, "assistant", reply, selected_model)
+                "INSERT INTO messages (conversation_id, role, content, model, user_id) VALUES (?, ?, ?, ?, ?)",
+                (conversation_id, "assistant", reply, selected_model, uid)
             )
 
         def stream_single():
@@ -596,7 +663,8 @@ def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks):
         message=request.message,
         conversation_id=conversation_id,
         persona_key=request.persona or "default",
-        web_search_enabled=request.web_search_enabled or False
+        web_search_enabled=request.web_search_enabled or False,
+        user_id=uid
     )
 
     def stream_and_persist():
@@ -633,8 +701,8 @@ def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks):
             if full_reply.strip():
                 with get_connection() as conn:
                     conn.execute(
-                        "INSERT INTO messages (conversation_id, role, content, model) VALUES (?, ?, ?, ?)",
-                        (conversation_id, "assistant", full_reply, selected_model)
+                        "INSERT INTO messages (conversation_id, role, content, model, user_id) VALUES (?, ?, ?, ?, ?)",
+                        (conversation_id, "assistant", full_reply, selected_model, uid)
                     )
         except requests.Timeout:
             yield "\n[MyAI Alert: Model stream timed out. Please check your system workload.]"
@@ -654,12 +722,15 @@ def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks):
 
 
 # ----------------------------------------------------
-# CONVERSATION MANAGEMENT ENDPOINTS
+# CONVERSATION MANAGEMENT ENDPOINTS (CANDIDATE SCOPED)
 # ----------------------------------------------------
 
 @app.get("/conversations")
-def get_conversations():
-    """Returns conversation list with custom titles and timestamps."""
+def get_conversations(request: Request):
+    """Returns conversation list with custom titles and timestamps scoped to logged-in candidate."""
+    user = get_current_user(request)
+    uid = user["user_id"]
+
     with get_connection() as conn:
         rows = conn.execute("""
             SELECT
@@ -670,9 +741,10 @@ def get_conversations():
                 COALESCE(cm.persona, 'default') AS persona
             FROM messages m
             LEFT JOIN conversation_metadata cm ON m.conversation_id = cm.conversation_id
+            WHERE m.user_id = ?
             GROUP BY m.conversation_id
             ORDER BY last_message_id DESC
-        """).fetchall()
+        """, (uid,)).fetchall()
 
         conversations = []
         for r in rows:
@@ -692,22 +764,25 @@ def get_conversations():
 
 
 @app.get("/history/{conversation_id}")
-def get_history(conversation_id: str):
-    """Retrieve full message history and metadata for a conversation."""
+def get_history(conversation_id: str, request: Request):
+    """Retrieve full message history and metadata for a conversation scoped to current candidate."""
+    user = get_current_user(request)
+    uid = user["user_id"]
+
     with get_connection() as conn:
         meta = conn.execute(
-            "SELECT title, persona FROM conversation_metadata WHERE conversation_id = ?",
-            (conversation_id,)
+            "SELECT title, persona FROM conversation_metadata WHERE conversation_id = ? AND user_id = ?",
+            (conversation_id, uid)
         ).fetchone()
 
         rows = conn.execute(
             """
             SELECT role, content, model, image_data, created_at
             FROM messages
-            WHERE conversation_id = ?
+            WHERE conversation_id = ? AND user_id = ?
             ORDER BY id ASC
             """,
-            (conversation_id,)
+            (conversation_id, uid)
         ).fetchall()
 
     return {
@@ -728,8 +803,10 @@ def get_history(conversation_id: str):
 
 
 @app.put("/conversations/{conversation_id}/rename")
-def rename_conversation(conversation_id: str, req: RenameConversationRequest):
+def rename_conversation(conversation_id: str, req: RenameConversationRequest, request: Request):
     """Rename a conversation."""
+    user = get_current_user(request)
+    uid = user["user_id"]
     clean_title = req.title.strip()
     if not clean_title:
         raise HTTPException(status_code=400, detail="Title cannot be empty.")
@@ -737,22 +814,29 @@ def rename_conversation(conversation_id: str, req: RenameConversationRequest):
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO conversation_metadata (conversation_id, title)
-            VALUES (?, ?)
+            INSERT INTO conversation_metadata (conversation_id, title, user_id)
+            VALUES (?, ?, ?)
             ON CONFLICT(conversation_id) DO UPDATE SET title = excluded.title
             """,
-            (conversation_id, clean_title)
+            (conversation_id, clean_title, uid)
         )
     return {"success": True, "title": clean_title}
 
 
 @app.delete("/conversations/{conversation_id}")
-def delete_conversation(conversation_id: str):
-    """Delete a conversation, summary, and metadata."""
+def delete_conversation(conversation_id: str, request: Request):
+    """Delete a conversation, summary, and metadata for current candidate."""
+    user = get_current_user(request)
+    uid = user["user_id"]
     with get_connection() as conn:
-        conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+        conn.execute("DELETE FROM messages WHERE conversation_id = ? AND user_id = ?", (conversation_id, uid))
         conn.execute("DELETE FROM conversation_summaries WHERE conversation_id = ?", (conversation_id,))
-        conn.execute("DELETE FROM conversation_metadata WHERE conversation_id = ?", (conversation_id,))
+        conn.execute("DELETE FROM conversation_metadata WHERE conversation_id = ? AND user_id = ?", (conversation_id, uid))
+
+    try:
+        sync_candidates_to_excel()
+    except Exception:
+        pass
     return {"message": "Conversation deleted successfully", "conversation_id": conversation_id}
 
 
@@ -829,15 +913,17 @@ def delete_document(filename: str):
 
 
 # ----------------------------------------------------
-# MEMORY MANAGEMENT ENDPOINTS
+# MEMORY MANAGEMENT ENDPOINTS (CANDIDATE ISOLATED)
 # ----------------------------------------------------
 
 @app.get("/memories")
-def get_memories():
-    """Fetch all saved long-term memories."""
-    memories = get_all_memories()
+def get_memories(request: Request):
+    """Fetch all saved long-term memories for logged in candidate."""
+    user = get_current_user(request)
+    memories = get_all_memories(user_id=user["user_id"])
     return {
         "total": len(memories),
+        "candidate": user["username"],
         "memories": [
             {
                 "id": m[0],
@@ -850,10 +936,21 @@ def get_memories():
     }
 
 
+@app.post("/memories")
+def create_memory(req: MemoryRequest, request: Request):
+    """Add a new memory item for the logged in candidate."""
+    user = get_current_user(request)
+    saved = save_memory(req.content, req.category, user_id=user["user_id"])
+    if not saved:
+        raise HTTPException(status_code=400, detail="Memory already exists or invalid.")
+    return {"success": True, "message": "Memory saved successfully."}
+
+
 @app.delete("/memories/{memory_id}")
-def remove_memory(memory_id: int):
-    """Delete a specific memory by ID."""
-    deleted = delete_memory(memory_id)
+def remove_memory(memory_id: int, request: Request):
+    """Delete a specific memory by ID verifying candidate ownership."""
+    user = get_current_user(request)
+    deleted = delete_memory(memory_id, user_id=user["user_id"])
     if not deleted:
         raise HTTPException(status_code=404, detail="Memory not found.")
     return {"message": "Memory deleted successfully", "memory_id": memory_id}
@@ -892,40 +989,141 @@ def execute_agent_action(req: ActionExecutionRequest):
 
 
 # ----------------------------------------------------
-# AUTHENTICATION & SESSION ENDPOINTS
+# AUTHENTICATION & CANDIDATE EXCEL ENDPOINTS
 # ----------------------------------------------------
 
 @app.post("/auth/register")
-def api_register(req: AuthRequest):
-    res = register_user(req.username, req.password)
+def api_register(req: RegisterRequest):
+    """Register a new candidate account and auto-update the Excel sheet."""
+    res = register_user(
+        username=req.username,
+        password=req.password,
+        full_name=req.full_name,
+        email=req.email,
+        phone=req.phone,
+        role=req.role
+    )
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Registration failed"))
-    return res
+    user_payload = {
+        "id": res["user_id"],
+        "user_id": res["user_id"],
+        "username": res["username"],
+        "full_name": res["full_name"],
+        "email": res["email"],
+        "phone": res["phone"],
+        "role": res["role"]
+    }
+    return {
+        "success": True,
+        "access_token": res["token"],
+        "token": res["token"],
+        "token_type": "bearer",
+        "user": user_payload,
+        **user_payload
+    }
 
 
 @app.post("/auth/login")
-def api_login(req: AuthRequest):
+def api_login(req: LoginRequest):
+    """Authenticate candidate and issue session token; updates Excel last login."""
     res = authenticate_user(req.username, req.password)
     if not res.get("success"):
-        raise HTTPException(status_code=401, detail=res.get("error", "Authentication failed"))
-    return res
+        raise HTTPException(status_code=401, detail=res.get("error", "Invalid username or password"))
+    user_payload = {
+        "id": res["user_id"],
+        "user_id": res["user_id"],
+        "username": res["username"],
+        "full_name": res["full_name"],
+        "email": res["email"],
+        "phone": res["phone"],
+        "role": res["role"]
+    }
+    return {
+        "success": True,
+        "access_token": res["token"],
+        "token": res["token"],
+        "token_type": "bearer",
+        "user": user_payload,
+        **user_payload
+    }
 
 
 @app.get("/auth/me")
-def api_me(authorization: Optional[str] = Header(None)):
-    token = authorization.replace("Bearer ", "") if authorization else None
-    user = validate_session(token)
-    if not user:
-        return {"authenticated": False, "user": None}
-    return {"authenticated": True, "user": user}
+def api_me(request: Request):
+    """Retrieve currently authenticated candidate profile and activity metrics."""
+    user = get_current_user(request)
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        conv_count = cursor.execute(
+            "SELECT COUNT(DISTINCT conversation_id) FROM messages WHERE user_id = ?",
+            (user["user_id"],)
+        ).fetchone()[0]
+        mem_count = cursor.execute(
+            "SELECT COUNT(*) FROM memories WHERE user_id = ?",
+            (user["user_id"],)
+        ).fetchone()[0]
+
+    is_authenticated = bool(user.get("token") or user["user_id"] != 1 or user["username"] != "default")
+
+    return {
+        "authenticated": is_authenticated,
+        "user": {
+            **user,
+            "total_conversations": conv_count,
+            "total_memories": mem_count
+        }
+    }
 
 
 @app.post("/auth/logout")
-def api_logout(authorization: Optional[str] = Header(None)):
-    token = authorization.replace("Bearer ", "") if authorization else None
+def api_logout(request: Request):
+    """Terminate candidate session."""
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        token = request.cookies.get("myai_token")
     if token:
         invalidate_session(token)
     return {"message": "Logged out successfully"}
+
+
+@app.get("/candidates/download-excel")
+def download_candidates_excel():
+    """Download the live auto-updated Excel spreadsheet containing all candidate records."""
+    sync_candidates_to_excel()
+    if not EXCEL_PATH.exists():
+        raise HTTPException(status_code=404, detail="Excel directory file not found.")
+    return FileResponse(
+        path=str(EXCEL_PATH),
+        filename="candidates.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+@app.get("/candidates/download-csv")
+def download_candidates_csv():
+    """Download candidate directory as CSV."""
+    sync_candidates_to_excel()
+    if not CSV_PATH.exists():
+        raise HTTPException(status_code=404, detail="CSV directory file not found.")
+    return FileResponse(
+        path=str(CSV_PATH),
+        filename="candidates.csv",
+        media_type="text/csv"
+    )
+
+
+@app.get("/candidates/list")
+def list_candidates_endpoint():
+    """List all registered candidates and summary stats."""
+    candidates = get_all_candidates_data()
+    return {
+        "total": len(candidates),
+        "candidates": candidates
+    }
 
 
 # ----------------------------------------------------

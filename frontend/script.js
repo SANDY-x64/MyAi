@@ -16,6 +16,10 @@ const defaultApiUrl = (window.location.protocol.startsWith("http") && !window.lo
 const API = localStorage.getItem("myai_backend_url") || defaultApiUrl;
 
 let state = {
+    token: localStorage.getItem("myai_auth_token") || null,
+    user: (() => {
+        try { return JSON.parse(localStorage.getItem("myai_user") || "null"); } catch (e) { return null; }
+    })(),
     conversationId: localStorage.getItem("myai_conversation_id") || null,
     model: "llama3.2:1b",
     persona: "default",
@@ -26,6 +30,15 @@ let state = {
     isRecording: false,
     activeSpeechUtterance: null
 };
+
+// Helper for authenticated API headers
+function authHeaders(extra = {}) {
+    const headers = { ...extra };
+    if (state.token) {
+        headers["Authorization"] = `Bearer ${state.token}`;
+    }
+    return headers;
+}
 
 // -------------------------------------------------------------------
 // 2. DOM ELEMENTS
@@ -38,6 +51,40 @@ const personaSelect = document.getElementById("personaSelect");
 const conversationList = document.getElementById("conversationList");
 const documentList = document.getElementById("documentList");
 const memoryList = document.getElementById("memoryList");
+
+// Candidate & Auth Elements
+const candidateProfileCard = document.getElementById("candidateProfileCard");
+const candidateAvatar = document.getElementById("candidateAvatar");
+const candidateName = document.getElementById("candidateName");
+const candidateRole = document.getElementById("candidateRole");
+const authBtnLabel = document.getElementById("authBtnLabel");
+const openAuthModalBtn = document.getElementById("openAuthModalBtn");
+const downloadExcelBtn = document.getElementById("downloadExcelBtn");
+
+const authModal = document.getElementById("authModal");
+const closeAuthModalBtn = document.getElementById("closeAuthModalBtn");
+const tabSignInBtn = document.getElementById("tabSignInBtn");
+const tabSignUpBtn = document.getElementById("tabSignUpBtn");
+
+const signInForm = document.getElementById("signInForm");
+const signUpForm = document.getElementById("signUpForm");
+const loginUsername = document.getElementById("loginUsername");
+const loginPassword = document.getElementById("loginPassword");
+const loginErrorAlert = document.getElementById("loginErrorAlert");
+const loginSubmitBtn = document.getElementById("loginSubmitBtn");
+
+const regFullName = document.getElementById("regFullName");
+const regUsername = document.getElementById("regUsername");
+const regEmail = document.getElementById("regEmail");
+const regPhone = document.getElementById("regPhone");
+const regRole = document.getElementById("regRole");
+const regPassword = document.getElementById("regPassword");
+const regConfirmPassword = document.getElementById("regConfirmPassword");
+const signUpErrorAlert = document.getElementById("signUpErrorAlert");
+const signUpSuccessAlert = document.getElementById("signUpSuccessAlert");
+const signUpSubmitBtn = document.getElementById("signUpSubmitBtn");
+const switchSignUpLink = document.getElementById("switchSignUpLink");
+const switchSignInLink = document.getElementById("switchSignInLink");
 
 const chatBox = document.getElementById("chatBox");
 const welcomeHero = document.getElementById("welcomeHero");
@@ -76,6 +123,14 @@ const actionArguments = document.getElementById("actionArguments");
 const approveActionBtn = document.getElementById("approveActionBtn");
 const rejectActionBtn = document.getElementById("rejectActionBtn");
 let currentPendingActionId = null;
+
+// Ensure download links point to the resolved backend API
+if (downloadExcelBtn) {
+    downloadExcelBtn.href = `${API}/candidates/download-excel`;
+}
+document.querySelectorAll(".direct-excel-link").forEach(link => {
+    link.href = `${API}/candidates/download-excel`;
+});
 
 // -------------------------------------------------------------------
 // 3. MARKDOWN & SYNTAX HIGHLIGHTING SETUP
@@ -371,7 +426,7 @@ chatForm.addEventListener("submit", async (e) => {
 
         const res = await fetch(`${API}/chat/stream`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify(payload)
         });
 
@@ -451,6 +506,7 @@ docFileInput.addEventListener("change", async () => {
     try {
         const res = await fetch(`${API}/upload-document`, {
             method: "POST",
+            headers: authHeaders(),
             body: formData
         });
         const data = await res.json();
@@ -555,7 +611,7 @@ personaSelect.addEventListener("change", () => {
 
 async function loadConversations() {
     try {
-        const res = await fetch(`${API}/conversations`);
+        const res = await fetch(`${API}/conversations`, { headers: authHeaders() });
         const data = await res.json();
         const convs = data.conversations || [];
 
@@ -598,7 +654,7 @@ async function loadConversations() {
 
 async function openConversation(id, title) {
     try {
-        const res = await fetch(`${API}/history/${id}`);
+        const res = await fetch(`${API}/history/${id}`, { headers: authHeaders() });
         const data = await res.json();
 
         state.conversationId = id;
@@ -637,7 +693,7 @@ async function openConversation(id, title) {
 async function deleteConversation(id) {
     if (!confirm("Are you sure you want to delete this conversation?")) return;
     try {
-        await fetch(`${API}/conversations/${id}`, { method: "DELETE" });
+        await fetch(`${API}/conversations/${id}`, { method: "DELETE", headers: authHeaders() });
         if (state.conversationId === id) {
             startNewChat();
         } else {
@@ -670,7 +726,7 @@ renameChatBtn.addEventListener("click", async () => {
     try {
         await fetch(`${API}/conversations/${state.conversationId}/rename`, {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ title: newTitle.trim() })
         });
         chatTitle.textContent = newTitle.trim();
@@ -691,7 +747,7 @@ clearChatBtn.addEventListener("click", () => {
 // Load Documents in Tab
 async function loadDocuments() {
     try {
-        const res = await fetch(`${API}/documents`);
+        const res = await fetch(`${API}/documents`, { headers: authHeaders() });
         const data = await res.json();
         const docs = data.documents || [];
 
@@ -723,7 +779,7 @@ async function loadDocuments() {
 window.deleteDocFile = async function(filename) {
     if (!confirm(`Delete ${filename}? It will be removed from ChromaDB vector search.`)) return;
     try {
-        await fetch(`${API}/documents/${encodeURIComponent(filename)}`, { method: "DELETE" });
+        await fetch(`${API}/documents/${encodeURIComponent(filename)}`, { method: "DELETE", headers: authHeaders() });
         loadDocuments();
     } catch (err) {
         alert("Failed to delete document.");
@@ -733,7 +789,7 @@ window.deleteDocFile = async function(filename) {
 // Load Memories in Tab
 async function loadMemories() {
     try {
-        const res = await fetch(`${API}/memories`);
+        const res = await fetch(`${API}/memories`, { headers: authHeaders() });
         const data = await res.json();
         const memories = data.memories || [];
 
@@ -763,7 +819,7 @@ async function loadMemories() {
 window.deleteMemoryEntry = async function(id) {
     if (!confirm("Delete this memory from your permanent profile?")) return;
     try {
-        await fetch(`${API}/memories/${id}`, { method: "DELETE" });
+        await fetch(`${API}/memories/${id}`, { method: "DELETE", headers: authHeaders() });
         loadMemories();
     } catch (err) {
         alert("Failed to delete memory.");
@@ -794,7 +850,7 @@ async function checkHealth() {
 // -------------------------------------------------------------------
 async function checkPendingActions() {
     try {
-        const res = await fetch(`${API}/agent/pending-actions`);
+        const res = await fetch(`${API}/agent/pending-actions`, { headers: authHeaders() });
         const data = await res.json();
         const pending = data.pending_actions || [];
 
@@ -821,7 +877,7 @@ approveActionBtn.addEventListener("click", async () => {
     try {
         const res = await fetch(`${API}/agent/execute-action`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ action_id: currentPendingActionId, approved: true })
         });
         const result = await res.json();
@@ -837,7 +893,7 @@ rejectActionBtn.addEventListener("click", async () => {
     try {
         await fetch(`${API}/agent/execute-action`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ action_id: currentPendingActionId, approved: false })
         });
         createMessageRow("bot", "⚠️ Agent action execution was cancelled by user.");
@@ -918,6 +974,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         closeMobileSidebar();
         if (actionModal) actionModal.style.display = "none";
+        if (authModal) authModal.style.display = "none";
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
@@ -934,10 +991,270 @@ window.addEventListener("resize", () => {
 });
 
 // -------------------------------------------------------------------
+// 9.5 CANDIDATE AUTHENTICATION & EXCEL SYNC
+// -------------------------------------------------------------------
+function updateCandidateUI() {
+    if (state.user && state.token) {
+        const displayName = state.user.full_name || state.user.username || "Candidate";
+        const initial = displayName.charAt(0).toUpperCase();
+        if (candidateAvatar) candidateAvatar.textContent = initial;
+        if (candidateName) candidateName.textContent = displayName;
+        if (candidateRole) candidateRole.textContent = state.user.role || "Candidate";
+        if (authBtnLabel) authBtnLabel.textContent = "Switch / Sign Out";
+    } else {
+        if (candidateAvatar) candidateAvatar.textContent = "👤";
+        if (candidateName) candidateName.textContent = "Guest Candidate";
+        if (candidateRole) candidateRole.textContent = "Workspace Default";
+        if (authBtnLabel) authBtnLabel.textContent = "Sign In / Register";
+    }
+}
+
+async function loadCurrentUser() {
+    if (!state.token) {
+        updateCandidateUI();
+        return;
+    }
+    try {
+        const res = await fetch(`${API}/auth/me`, {
+            headers: authHeaders()
+        });
+        if (res.ok) {
+            const data = await res.json();
+            state.user = data.user;
+            localStorage.setItem("myai_user", JSON.stringify(data.user));
+            updateCandidateUI();
+        } else {
+            // Token expired or invalid
+            await logoutCandidate(false);
+        }
+    } catch (e) {
+        console.warn("Failed to check auth status:", e);
+        updateCandidateUI();
+    }
+}
+
+function openAuthModal(initialTab = "signin") {
+    if (!authModal) return;
+    switchAuthTab(initialTab);
+    if (loginErrorAlert) loginErrorAlert.classList.add("hidden");
+    if (signUpErrorAlert) signUpErrorAlert.classList.add("hidden");
+    if (signUpSuccessAlert) signUpSuccessAlert.classList.add("hidden");
+    authModal.style.display = "flex";
+}
+
+function closeAuthModal() {
+    if (authModal) authModal.style.display = "none";
+}
+
+function switchAuthTab(tab) {
+    if (tab === "signin") {
+        if (tabSignInBtn) tabSignInBtn.classList.add("active");
+        if (tabSignUpBtn) tabSignUpBtn.classList.remove("active");
+        if (signInForm) signInForm.classList.remove("hidden");
+        if (signUpForm) signUpForm.classList.add("hidden");
+        if (loginUsername) setTimeout(() => loginUsername.focus(), 50);
+    } else {
+        if (tabSignInBtn) tabSignInBtn.classList.remove("active");
+        if (tabSignUpBtn) tabSignUpBtn.classList.add("active");
+        if (signInForm) signInForm.classList.add("hidden");
+        if (signUpForm) signUpForm.classList.remove("hidden");
+        if (regFullName) setTimeout(() => regFullName.focus(), 50);
+    }
+}
+
+if (openAuthModalBtn) {
+    openAuthModalBtn.addEventListener("click", () => {
+        if (state.token && state.user) {
+            const displayName = state.user.full_name || state.user.username;
+            const wantLogout = confirm(`Signed in as: ${displayName} (${state.user.role || "Candidate"})\n\nClick OK to Sign Out / Switch Candidate, or Cancel to stay signed in.`);
+            if (wantLogout) {
+                logoutCandidate(true);
+            }
+        } else {
+            openAuthModal("signin");
+        }
+    });
+}
+
+if (closeAuthModalBtn) {
+    closeAuthModalBtn.addEventListener("click", closeAuthModal);
+}
+
+if (tabSignInBtn) {
+    tabSignInBtn.addEventListener("click", () => switchAuthTab("signin"));
+}
+
+if (tabSignUpBtn) {
+    tabSignUpBtn.addEventListener("click", () => switchAuthTab("signup"));
+}
+
+if (switchSignUpLink) {
+    switchSignUpLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        switchAuthTab("signup");
+    });
+}
+
+if (switchSignInLink) {
+    switchSignInLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        switchAuthTab("signin");
+    });
+}
+
+if (signInForm) {
+    signInForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (loginErrorAlert) loginErrorAlert.classList.add("hidden");
+        if (loginSubmitBtn) {
+            loginSubmitBtn.disabled = true;
+            loginSubmitBtn.textContent = "Signing in...";
+        }
+
+        try {
+            const username = loginUsername.value.trim();
+            const password = loginPassword.value;
+            const res = await fetch(`${API}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.detail || "Invalid login credentials");
+            }
+
+            state.token = data.access_token;
+            state.user = data.user;
+            localStorage.setItem("myai_auth_token", data.access_token);
+            localStorage.setItem("myai_user", JSON.stringify(data.user));
+
+            updateCandidateUI();
+            closeAuthModal();
+
+            // Refresh candidate workspace
+            startNewChat();
+            await loadConversations();
+            await loadMemories();
+
+            createMessageRow("bot", `👋 Welcome back, **${state.user.full_name || state.user.username}**!\n\nYour isolated candidate workspace is active. All past conversations and personal long-term memories have been loaded. Activity is automatically synced to **candidates.xlsx**.`);
+        } catch (err) {
+            if (loginErrorAlert) {
+                loginErrorAlert.textContent = err.message;
+                loginErrorAlert.classList.remove("hidden");
+            }
+        } finally {
+            if (loginSubmitBtn) {
+                loginSubmitBtn.disabled = false;
+                loginSubmitBtn.textContent = "Sign In to Candidate Workspace";
+            }
+        }
+    });
+}
+
+if (signUpForm) {
+    signUpForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (signUpErrorAlert) signUpErrorAlert.classList.add("hidden");
+        if (signUpSuccessAlert) signUpSuccessAlert.classList.add("hidden");
+
+        const password = regPassword.value;
+        const confirmPassword = regConfirmPassword.value;
+        if (password !== confirmPassword) {
+            if (signUpErrorAlert) {
+                signUpErrorAlert.textContent = "Passwords do not match.";
+                signUpErrorAlert.classList.remove("hidden");
+            }
+            return;
+        }
+        if (password.length < 4) {
+            if (signUpErrorAlert) {
+                signUpErrorAlert.textContent = "Password must be at least 4 characters.";
+                signUpErrorAlert.classList.remove("hidden");
+            }
+            return;
+        }
+
+        if (signUpSubmitBtn) {
+            signUpSubmitBtn.disabled = true;
+            signUpSubmitBtn.textContent = "Registering & Syncing to Excel...";
+        }
+
+        try {
+            const payload = {
+                full_name: regFullName.value.trim(),
+                username: regUsername.value.trim(),
+                email: regEmail.value.trim() || undefined,
+                phone: regPhone.value.trim() || undefined,
+                role: regRole.value,
+                password: password
+            };
+
+            const res = await fetch(`${API}/auth/register`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.detail || "Registration failed");
+            }
+
+            state.token = data.access_token;
+            state.user = data.user;
+            localStorage.setItem("myai_auth_token", data.access_token);
+            localStorage.setItem("myai_user", JSON.stringify(data.user));
+
+            updateCandidateUI();
+            closeAuthModal();
+
+            startNewChat();
+            await loadConversations();
+            await loadMemories();
+
+            createMessageRow("bot", `🎉 **Candidate Registered & Auto-Synced!**\n\nWelcome **${state.user.full_name}** (${state.user.role}).\n- Candidate details have been automatically updated into **data/candidates.xlsx** and **candidates.csv**.\n- You now have an isolated, private memory bank and conversation history.\n- Click **Excel (.xlsx)** in the sidebar anytime to download the live roster.`);
+        } catch (err) {
+            if (signUpErrorAlert) {
+                signUpErrorAlert.textContent = err.message;
+                signUpErrorAlert.classList.remove("hidden");
+            }
+        } finally {
+            if (signUpSubmitBtn) {
+                signUpSubmitBtn.disabled = false;
+                signUpSubmitBtn.textContent = "Register Candidate & Sync to Excel";
+            }
+        }
+    });
+}
+
+async function logoutCandidate(notify = true) {
+    if (state.token) {
+        try {
+            await fetch(`${API}/auth/logout`, {
+                method: "POST",
+                headers: authHeaders()
+            });
+        } catch (e) {}
+    }
+    state.token = null;
+    state.user = null;
+    localStorage.removeItem("myai_auth_token");
+    localStorage.removeItem("myai_user");
+    updateCandidateUI();
+    startNewChat();
+    await loadConversations();
+    await loadMemories();
+    if (notify) {
+        createMessageRow("bot", "ℹ️ Signed out. You are now in the default guest workspace. Click **Sign In / Register** in the sidebar to log in to your candidate account.");
+    }
+}
+
+// -------------------------------------------------------------------
 // 10. INITIALIZATION
 // -------------------------------------------------------------------
 async function initApp() {
     await checkHealth();
+    await loadCurrentUser();
     await loadModels();
     await loadConversations();
     await loadDocuments();

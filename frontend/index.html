@@ -31,6 +31,27 @@
             </button>
         </div>
 
+        <!-- CANDIDATE PROFILE & AUTH CARD -->
+        <div class="sidebar-candidate-card" id="candidateProfileCard">
+            <div class="candidate-card-top">
+                <div class="candidate-avatar" id="candidateAvatar">👤</div>
+                <div class="candidate-meta">
+                    <div class="candidate-name" id="candidateName">Guest Candidate</div>
+                    <div class="candidate-role" id="candidateRole">Workspace Default</div>
+                </div>
+            </div>
+            <div class="candidate-card-actions">
+                <button class="candidate-auth-btn" id="openAuthModalBtn" type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
+                    <span id="authBtnLabel">Sign In / Register</span>
+                </button>
+                <a href="/candidates/download-excel" class="candidate-excel-btn" id="downloadExcelBtn" title="Download updated candidates.xlsx" download>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Excel (.xlsx)</span>
+                </a>
+            </div>
+        </div>
+
         <!-- CONTROLS & MODEL SELECTOR -->
         <div class="sidebar-section">
             <label class="section-label">AI Model</label>
@@ -207,6 +228,113 @@
             </div>
         </div>
     </main>
+</div>
+
+<!-- CANDIDATE AUTHENTICATION MODAL -->
+<div class="modal-backdrop" id="authModal" style="display: none;">
+    <div class="auth-modal-card">
+        <div class="modal-header">
+            <div class="modal-title-group">
+                <div class="modal-title-icon">🔐</div>
+                <div>
+                    <h3 id="authModalTitle">Candidate Workspace Portal</h3>
+                    <p class="modal-subtitle">Isolated memories, private conversations & automatic Excel roster</p>
+                </div>
+            </div>
+            <button class="modal-close" id="closeAuthModalBtn" type="button" title="Close">×</button>
+        </div>
+
+        <div class="auth-tabs">
+            <button class="auth-tab-btn active" id="tabSignInBtn" type="button">Candidate Sign In</button>
+            <button class="auth-tab-btn" id="tabSignUpBtn" type="button">New Candidate Sign Up</button>
+        </div>
+
+        <!-- SIGN IN FORM -->
+        <form class="auth-form" id="signInForm">
+            <div class="form-group">
+                <label for="loginUsername">Username or Email</label>
+                <input type="text" id="loginUsername" placeholder="e.g. jdoe or candidate@example.com" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="loginPassword">Password</label>
+                <input type="password" id="loginPassword" placeholder="Enter your password" required autocomplete="current-password">
+            </div>
+            <div class="auth-alert error hidden" id="loginErrorAlert"></div>
+            <button type="submit" class="btn btn-primary btn-block" id="loginSubmitBtn">
+                Sign In to Candidate Workspace
+            </button>
+            <div class="auth-footer-hint">
+                Need a new profile? <a href="#" id="switchSignUpLink">Register candidate here</a>
+            </div>
+        </form>
+
+        <!-- SIGN UP FORM -->
+        <form class="auth-form hidden" id="signUpForm">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="regFullName">Full Name *</label>
+                    <input type="text" id="regFullName" placeholder="e.g. Jane Smith" required>
+                </div>
+                <div class="form-group">
+                    <label for="regUsername">Username *</label>
+                    <input type="text" id="regUsername" placeholder="e.g. janesmith" required autocomplete="username">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="regEmail">Email Address</label>
+                    <input type="email" id="regEmail" placeholder="jane@example.com" autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="regPhone">Phone Number</label>
+                    <input type="tel" id="regPhone" placeholder="+1 (555) 234-5678">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="regRole">Role / Target Specialization</label>
+                <select id="regRole">
+                    <option value="AI / ML Engineer">AI / ML Engineer</option>
+                    <option value="Full Stack Developer">Full Stack Developer</option>
+                    <option value="Python Software Engineer">Python Software Engineer</option>
+                    <option value="Data Scientist">Data Scientist</option>
+                    <option value="Software Architect">Software Architect</option>
+                    <option value="Student / Researcher">Student / Researcher</option>
+                    <option value="General Candidate">General Candidate</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="regPassword">Password *</label>
+                    <input type="password" id="regPassword" placeholder="Minimum 4 characters" required autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label for="regConfirmPassword">Confirm Password *</label>
+                    <input type="password" id="regConfirmPassword" placeholder="Re-enter password" required autocomplete="new-password">
+                </div>
+            </div>
+
+            <div class="excel-notice">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                <span>Registration automatically saves your candidate profile to <strong>data/candidates.xlsx</strong> and provisions a private, isolated memory store.</span>
+            </div>
+
+            <div class="auth-alert error hidden" id="signUpErrorAlert"></div>
+            <div class="auth-alert success hidden" id="signUpSuccessAlert"></div>
+
+            <button type="submit" class="btn btn-primary btn-block" id="signUpSubmitBtn">
+                Register Candidate & Sync to Excel
+            </button>
+            <div class="auth-footer-hint">
+                Already registered? <a href="#" id="switchSignInLink">Sign in here</a>
+            </div>
+        </form>
+
+        <div class="auth-modal-footer">
+            <a href="/candidates/download-excel" class="direct-excel-link" download>
+                📥 Download Real-Time Candidates Excel Sheet (candidates.xlsx)
+            </a>
+        </div>
+    </div>
 </div>
 
 <!-- ACTION APPROVAL MODAL -->

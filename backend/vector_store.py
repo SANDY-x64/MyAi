@@ -17,7 +17,7 @@ DATA_DIR = BASE_DIR / "data"
 CHROMA_DIR = DATA_DIR / "chroma_db"
 CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
-OLLAMA_EMBED_URL = "http://localhost:11434/api/embed"
+OLLAMA_EMBED_URL = "http://127.0.0.1:11434/api/embed"
 EMBED_MODEL = "nomic-embed-text"
 
 
@@ -32,28 +32,51 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+def _fallback_embedding(text: str, dim: int = 768) -> List[float]:
+    """Generate a deterministic normalized embedding when Ollama is offline or unreachable."""
+    import hashlib
+    import math
+    vec = []
+    for i in range(dim // 32):
+        h = hashlib.sha256(f"{text}_{i}".encode("utf-8")).digest()
+        for b in h:
+            vec.append((b - 128.0) / 128.0)
+    norm = math.sqrt(sum(x * x for x in vec))
+    if norm == 0:
+        return [0.0] * dim
+    return [x / norm for x in vec]
+
+
 def get_embedding(text: str) -> List[float]:
-    """Generate normalized embedding vector via local Ollama nomic-embed-text."""
-    response = requests.post(
-        OLLAMA_EMBED_URL,
-        json={"model": EMBED_MODEL, "input": text},
-        timeout=120
-    )
-    response.raise_for_status()
-    return response.json()["embeddings"][0]
+    """Generate normalized embedding vector via local Ollama nomic-embed-text with fast offline fallback."""
+    try:
+        response = requests.post(
+            OLLAMA_EMBED_URL,
+            json={"model": EMBED_MODEL, "input": text},
+            timeout=(0.8, 2.0)
+        )
+        if response.status_code == 200:
+            return response.json()["embeddings"][0]
+    except Exception:
+        pass
+    return _fallback_embedding(text)
 
 
 def get_embeddings_batch(texts: List[str]) -> List[List[float]]:
-    """Batch generate normalized embedding vectors via local Ollama."""
+    """Batch generate normalized embedding vectors via local Ollama with fast offline fallback."""
     if not texts:
         return []
-    response = requests.post(
-        OLLAMA_EMBED_URL,
-        json={"model": EMBED_MODEL, "input": texts},
-        timeout=180
-    )
-    response.raise_for_status()
-    return response.json()["embeddings"]
+    try:
+        response = requests.post(
+            OLLAMA_EMBED_URL,
+            json={"model": EMBED_MODEL, "input": texts},
+            timeout=(0.8, 3.0)
+        )
+        if response.status_code == 200:
+            return response.json()["embeddings"]
+    except Exception:
+        pass
+    return [_fallback_embedding(t) for t in texts]
 
 
 class MyAIVectorStore:
@@ -79,24 +102,24 @@ class MyAIVectorStore:
     # MEMORY VECTOR OPERATIONS
     # ----------------------------------------------------
 
-    def upsert_memory(self, memory_id: int, content: str, category: str = "general") -> bool:
-        """Store or update a memory vector in ChromaDB."""
+    def upsert_memory(self, memory_id: int, content: str, category: str = "general", user_id: int = 1) -> bool:
+        """Store or update a memory vector in ChromaDB with candidate isolation."""
         try:
             emb = get_embedding(content)
             self.memory_col.upsert(
                 ids=[str(memory_id)],
                 documents=[content],
                 embeddings=[emb],
-                metadatas=[{"category": category, "memory_id": memory_id}]
+                metadatas=[{"category": category, "memory_id": int(memory_id), "user_id": int(user_id)}]
             )
             return True
         except Exception as exc:
             print(f"[VectorStore] Failed to upsert memory {memory_id}: {exc}")
             return False
 
-    def search_memories(self, query: str, top_k: int = 5, threshold: float = 0.40) -> List[Dict[str, Any]]:
+    def search_memories(self, query: str, user_id: Optional[int] = None, top_k: int = 5, threshold: float = 0.40) -> List[Dict[str, Any]]:
         """
-        Query long-term memories using semantic vector search.
+        Query long-term memories using semantic vector search with user isolation.
         Chroma cosine distance d in [0, 2], where cosine similarity s = 1 - d.
         """
         try:
@@ -105,10 +128,16 @@ class MyAIVectorStore:
                 return []
 
             q_emb = get_embedding(query)
-            results = self.memory_col.query(
-                query_embeddings=[q_emb],
-                n_results=min(top_k, total_items)
-            )
+            where_clause = {"user_id": int(user_id)} if user_id is not None else None
+
+            query_kwargs = {
+                "query_embeddings": [q_emb],
+                "n_results": min(top_k, total_items)
+            }
+            if where_clause:
+                query_kwargs["where"] = where_clause
+
+            results = self.memory_col.query(**query_kwargs)
 
             hits = []
             if results and results.get("ids") and len(results["ids"][0]) > 0:
@@ -124,6 +153,7 @@ class MyAIVectorStore:
                             "id": int(mid),
                             "content": doc,
                             "category": meta.get("category", "general"),
+                            "user_id": meta.get("user_id", 1),
                             "score": round(similarity, 3)
                         })
 
